@@ -1,0 +1,13 @@
+# Godot 4 cache and generated files
+.godot/
+
+# Export builds
+*.exe
+*.apk
+*.aab
+*.pck
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

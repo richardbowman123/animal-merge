@@ -1,0 +1,35 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/camera_rig.gd" id="2_camera"]
+[ext_resource type="Script" path="res://scripts/drop_system.gd" id="3_drop"]
+[ext_resource type="Script" path="res://scripts/merge_system.gd" id="4_merge"]
+[ext_resource type="Script" path="res://scripts/container.gd" id="5_container"]
+[ext_resource type="Script" path="res://scripts/crowd.gd" id="6_crowd"]
+
+[node name="Game" type="Node3D"]
+script = ExtResource("1_game")
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("2_camera")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+fov = 50.0
+
+[node name="DropSystem" type="Node3D" parent="."]
+script = ExtResource("3_drop")
+
+[node name="MergeSystem" type="Node" parent="."]
+script = ExtResource("4_merge")
+
+[node name="Container" type="Node3D" parent="."]
+script = ExtResource("5_container")
+
+[node name="Crowd" type="Node3D" parent="."]
+script = ExtResource("6_crowd")
+
+[node name="Animals" type="Node3D" parent="."]
+
+[node name="DeathZone" type="Node3D" parent="."]
+
+[node name="UILayer" type="CanvasLayer" parent="."]
