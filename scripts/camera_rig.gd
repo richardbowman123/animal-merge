@@ -9,7 +9,7 @@ const MAX_PITCH := 80.0
 const ZOOM_SPEED := 0.5
 const MIN_DISTANCE := 5.0
 const MAX_DISTANCE := 20.0
-const DROP_ZONE_FRACTION := 0.35  # Must match drop_system.gd
+const DROP_ZONE_FRACTION := 0.33  # Top third is drop zone, bottom two-thirds is orbit
 
 var _yaw := 0.0
 var _pitch := 35.0
@@ -17,7 +17,7 @@ var _distance := 16.0
 var _target := Vector3(0.0, 3.5, 0.0)
 var _is_orbiting := false
 var _last_mouse_pos := Vector2.ZERO
-var _orbit_touch_index := -1  # Which finger is orbiting
+var _orbit_touch_index := -1
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -44,7 +44,7 @@ func _is_in_orbit_zone(screen_pos: Vector2) -> bool:
 	return screen_pos.y >= viewport_height * DROP_ZONE_FRACTION
 
 func _unhandled_input(event: InputEvent) -> void:
-	# --- Desktop: right-click drag to orbit, scroll to zoom ---
+	# === DESKTOP: right-click drag to orbit, scroll to zoom ===
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -61,7 +61,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pitch -= mm.relative.y * MOUSE_ORBIT_SPEED * 60.0
 		_pitch = clampf(_pitch, MIN_PITCH, MAX_PITCH)
 
-	# --- Touch: single finger in bottom zone orbits ---
+	# === MOBILE: single finger drag in bottom two-thirds orbits ===
 	if event is InputEventScreenTouch:
 		var st := event as InputEventScreenTouch
 		if st.pressed:
