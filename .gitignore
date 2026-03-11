@@ -1,11 +1,12 @@
 # Godot 4 cache and generated files
 .godot/
 
-# Export builds
+# Export builds (but allow web export folder)
 *.exe
 *.apk
 *.aab
 *.pck
+!export-web/*.pck
 
 # OS files
 .DS_Store
