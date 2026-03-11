@@ -1,79 +1,343 @@
-extends Control
+extends Node3D
+
+# Cinematic main menu — 3D arena with smart demo drops targeting merges
+
+@onready var _container: GameContainer = $Container
+@onready var _crowd: Crowd = $Crowd
+@onready var _merge_system: MergeSystem = $MergeSystem
+@onready var _animals: Node3D = $Animals
+@onready var _camera_pivot: Node3D = $CinematicCamera
+@onready var _camera: Camera3D = $CinematicCamera/Camera3D
+@onready var _ui_layer: CanvasLayer = $UILayer
+
+# Camera animation
+var _cam_time := 0.0
+const CAM_ORBIT_SPEED := 0.15
+const CAM_TARGET := Vector3(0.0, 3.5, 0.0)
+
+# Lighting animation
+var _light_time := 0.0
+var _spot_lights: Array[Light3D] = []
+
+# Title animation
+var _title_label: Label
+var _title_time := 0.0
+
+# Demo drop state
+var _held_animal: Animal = null
+var _demo_tween: Tween = null
+var _demo_active := false
+var _demo_timer := 0.0
+const DEMO_RESTART_DELAY := 2.0
 
 func _ready() -> void:
-	_build_ui()
+	_setup_environment()
+	_setup_cinematic_camera()
+	_setup_ui()
+	_merge_system.setup(_animals)
+	_merge_system.score_earned.connect(_on_demo_score)
+	_seed_demo_animals()
+	_demo_timer = -1.0
+	_demo_active = false
 
-func _build_ui() -> void:
-	# Background
-	var bg := ColorRect.new()
-	bg.color = Color(0.08, 0.08, 0.15)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+func _process(delta: float) -> void:
+	_cam_time += delta
+	_light_time += delta
+	_title_time += delta
+	_update_cinematic_camera()
+	_update_lights()
+	_update_title()
 
-	var vbox := VBoxContainer.new()
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.set_anchors_preset(Control.PRESET_CENTER)
-	vbox.offset_left = -200
-	vbox.offset_top = -200
-	vbox.offset_right = 200
-	vbox.offset_bottom = 200
+	# Demo cycle management
+	if not _demo_active:
+		_demo_timer += delta
+		if _demo_timer >= DEMO_RESTART_DELAY:
+			_start_demo_cycle()
 
-	# Title
-	var title := Label.new()
-	title.text = "ANIMAL MERGE"
-	title.add_theme_font_size_override("font_size", 64)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_color_override("font_color", Color(0.3, 0.6, 1.0))
-	vbox.add_child(title)
+# ─── Environment ────────────────────────────────────────────────
+func _setup_environment() -> void:
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.04, 0.04, 0.08)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.15, 0.15, 0.25)
+	env.ambient_light_energy = 0.4
+	env.glow_enabled = true
+	env.glow_intensity = 0.6
+	env.glow_bloom = 0.3
+	env.tonemap_mode = 2  # Filmic
 
-	# Subtitle
-	var subtitle := Label.new()
-	subtitle.text = "Drop animals into the box.\nMatch two to merge them bigger!"
-	subtitle.add_theme_font_size_override("font_size", 20)
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
-	vbox.add_child(subtitle)
+	var world_env := WorldEnvironment.new()
+	world_env.environment = env
+	add_child(world_env)
 
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 40)
-	vbox.add_child(spacer)
+	# Key light — warm from above
+	var key_light := DirectionalLight3D.new()
+	key_light.rotation_degrees = Vector3(-50, 20, 0)
+	key_light.light_energy = 0.8
+	key_light.light_color = Color(1.0, 0.95, 0.85)
+	key_light.shadow_enabled = true
+	add_child(key_light)
 
-	# Play button
+	# Coloured spot lights that animate
+	var spot_colors := [
+		Color(0.3, 0.5, 1.0),   # Cool blue
+		Color(1.0, 0.3, 0.5),   # Warm pink
+		Color(0.3, 1.0, 0.5),   # Green
+		Color(1.0, 0.8, 0.2),   # Gold
+	]
+	var spot_positions := [
+		Vector3(-4, 10, -4),
+		Vector3(4, 10, -4),
+		Vector3(-4, 10, 4),
+		Vector3(4, 10, 4),
+	]
+	for i in range(4):
+		var spot := OmniLight3D.new()
+		spot.position = spot_positions[i]
+		spot.light_color = spot_colors[i]
+		spot.light_energy = 2.0
+		spot.omni_range = 12.0
+		spot.omni_attenuation = 1.5
+		add_child(spot)
+		_spot_lights.append(spot)
+
+# ─── Cinematic Camera ──────────────────────────────────────────
+func _setup_cinematic_camera() -> void:
+	_camera.fov = 50.0
+	_camera.near = 0.1
+	_camera.far = 100.0
+
+func _update_cinematic_camera() -> void:
+	if not _camera:
+		return
+
+	var t := _cam_time * CAM_ORBIT_SPEED
+	var orbit_phase := fmod(t, TAU)
+
+	var base_distance := 16.0
+	var distance_variation := 4.0
+	var distance := base_distance + sin(t * 0.4) * distance_variation
+
+	var base_pitch := 30.0
+	var pitch_variation := 15.0
+	var pitch := base_pitch + sin(t * 0.25) * pitch_variation
+
+	var yaw_rad := orbit_phase
+	var pitch_rad := deg_to_rad(pitch)
+
+	var offset := Vector3.ZERO
+	offset.x = distance * cos(pitch_rad) * sin(yaw_rad)
+	offset.y = distance * sin(pitch_rad)
+	offset.z = distance * cos(pitch_rad) * cos(yaw_rad)
+
+	var target := CAM_TARGET + Vector3(sin(t * 0.3) * 0.5, sin(t * 0.2) * 0.3, cos(t * 0.25) * 0.5)
+
+	_camera.global_position = target + offset
+	_camera.look_at(target, Vector3.UP)
+
+# ─── Animated Lights ───────────────────────────────────────────
+func _update_lights() -> void:
+	for i in range(_spot_lights.size()):
+		var light: OmniLight3D = _spot_lights[i] as OmniLight3D
+		var pulse := 1.5 + sin(_light_time * (0.8 + float(i) * 0.3) + float(i) * 1.5) * 1.0
+		light.light_energy = pulse
+		var base_x: float = [-4.0, 4.0, -4.0, 4.0][i]
+		var base_z: float = [-4.0, -4.0, 4.0, 4.0][i]
+		light.position.x = base_x + sin(_light_time * 0.5 + float(i)) * 1.5
+		light.position.z = base_z + cos(_light_time * 0.4 + float(i)) * 1.5
+
+# ─── Demo Seed ────────────────────────────────────────────────
+func _seed_demo_animals() -> void:
+	# Pre-populate with pairs of same-tier animals for merge targets
+	var seed_tiers := [0, 0, 1, 1, 2, 2, 0, 1, 0]
+	var hw := GameContainer.WIDTH / 2.0 - 0.8
+	var hd := GameContainer.DEPTH / 2.0 - 0.8
+
+	for i in range(seed_tiers.size()):
+		var tier: int = seed_tiers[i]
+		var animal := Animal.create(tier)
+		_animals.add_child(animal)
+		var x := randf_range(-hw, hw)
+		var z := randf_range(-hd, hd)
+		animal.global_position = Vector3(x, randf_range(1.0, 4.0), z)
+		_merge_system.register_animal(animal)
+
+# ─── Demo Cycle ───────────────────────────────────────────────
+func _start_demo_cycle() -> void:
+	_demo_active = true
+
+	var drop_tier := _pick_demo_tier()
+
+	# Find a same-tier target to aim near
+	var target_pos = _find_merge_target(drop_tier)
+	var has_target := target_pos != null
+
+	# Drop position — near the target if we have one, random otherwise
+	var drop_x: float
+	var drop_z: float
+	if has_target:
+		drop_x = clampf(target_pos.x + randf_range(-0.5, 0.5), -1.8, 1.8)
+		drop_z = clampf(target_pos.z + randf_range(-0.5, 0.5), -1.8, 1.8)
+	else:
+		drop_x = randf_range(-1.5, 1.5)
+		drop_z = randf_range(-1.5, 1.5)
+
+	var spawn_y := GameContainer.HEIGHT + 1.5
+	var drop_y := GameContainer.HEIGHT
+
+	# Create the animal above the container
+	_held_animal = Animal.create(drop_tier)
+	_held_animal.freeze = true
+	_held_animal.collision_layer = 0
+	_held_animal.collision_mask = 0
+	_animals.add_child(_held_animal)
+	_held_animal.global_position = Vector3(drop_x, spawn_y, drop_z)
+
+	if _demo_tween and _demo_tween.is_valid():
+		_demo_tween.kill()
+
+	_demo_tween = create_tween()
+
+	# Gently lower into drop position
+	_demo_tween.tween_property(_held_animal, "global_position:y", drop_y, 0.4).set_ease(Tween.EASE_OUT)
+
+	# Brief pause
+	_demo_tween.tween_interval(0.3)
+
+	# Release — enable physics and let it fall
+	_demo_tween.tween_callback(func():
+		if is_instance_valid(_held_animal):
+			_held_animal.freeze = false
+			_held_animal.collision_layer = 1
+			_held_animal.collision_mask = 1 | 2
+			_merge_system.register_animal(_held_animal)
+			_held_animal = null
+	)
+
+	# Watch the merge play out, then restart
+	_demo_tween.tween_interval(2.5)
+	_demo_tween.tween_callback(func():
+		_demo_active = false
+		_demo_timer = 0.0
+	)
+
+func _pick_demo_tier() -> int:
+	# Prefer tiers that have a merge partner available
+	for tier in range(AnimalData.MAX_DROPPABLE_TIER + 1):
+		if _find_merge_target(tier) != null:
+			return tier
+	return AnimalData.get_random_droppable_tier()
+
+func _find_merge_target(tier: int) -> Variant:
+	for child in _animals.get_children():
+		if child is Animal:
+			var animal := child as Animal
+			if animal == _held_animal:
+				continue
+			if animal.tier == tier and not animal.is_merging and not animal.freeze:
+				return animal.global_position
+	return null
+
+func _on_demo_score(_points: int, _pos: Vector3, _name: String, tier: int) -> void:
+	_crowd.react_to_merge(tier)
+
+# ─── UI ────────────────────────────────────────────────────────
+func _setup_ui() -> void:
+	_title_label = Label.new()
+	_title_label.text = "ANIMAL MERGE"
+	_title_label.add_theme_font_size_override("font_size", 56)
+	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_title_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
+	_title_label.add_theme_color_override("font_outline_color", Color(0.2, 0.4, 1.0))
+	_title_label.add_theme_constant_override("outline_size", 8)
+	_title_label.anchor_left = 0.0
+	_title_label.anchor_right = 1.0
+	_title_label.anchor_top = 0.0
+	_title_label.offset_top = 60
+	_title_label.offset_bottom = 140
+	_ui_layer.add_child(_title_label)
+
+	var tagline := Label.new()
+	tagline.text = "Match. Merge. Evolve."
+	tagline.add_theme_font_size_override("font_size", 20)
+	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tagline.add_theme_color_override("font_color", Color(0.6, 0.7, 0.9, 0.8))
+	tagline.anchor_left = 0.0
+	tagline.anchor_right = 1.0
+	tagline.anchor_top = 0.0
+	tagline.offset_top = 135
+	tagline.offset_bottom = 170
+	_ui_layer.add_child(tagline)
+
 	var play_btn := Button.new()
-	play_btn.text = "Play"
-	play_btn.add_theme_font_size_override("font_size", 28)
-	play_btn.custom_minimum_size = Vector2(220, 55)
+	play_btn.text = "PLAY"
+	play_btn.add_theme_font_size_override("font_size", 32)
+	play_btn.custom_minimum_size = Vector2(240, 65)
+	play_btn.anchor_left = 0.5
+	play_btn.anchor_right = 0.5
+	play_btn.anchor_top = 1.0
+	play_btn.anchor_bottom = 1.0
+	play_btn.offset_left = -120
+	play_btn.offset_top = -180
+	play_btn.offset_right = 120
+	play_btn.offset_bottom = -115
+
+	var btn_style := StyleBoxFlat.new()
+	btn_style.bg_color = Color(0.2, 0.4, 1.0, 0.85)
+	btn_style.corner_radius_top_left = 16
+	btn_style.corner_radius_top_right = 16
+	btn_style.corner_radius_bottom_left = 16
+	btn_style.corner_radius_bottom_right = 16
+	btn_style.content_margin_left = 20
+	btn_style.content_margin_right = 20
+	btn_style.content_margin_top = 10
+	btn_style.content_margin_bottom = 10
+	play_btn.add_theme_stylebox_override("normal", btn_style)
+
+	var btn_hover := StyleBoxFlat.new()
+	btn_hover.bg_color = Color(0.3, 0.5, 1.0, 0.95)
+	btn_hover.corner_radius_top_left = 16
+	btn_hover.corner_radius_top_right = 16
+	btn_hover.corner_radius_bottom_left = 16
+	btn_hover.corner_radius_bottom_right = 16
+	btn_hover.content_margin_left = 20
+	btn_hover.content_margin_right = 20
+	btn_hover.content_margin_top = 10
+	btn_hover.content_margin_bottom = 10
+	play_btn.add_theme_stylebox_override("hover", btn_hover)
+
+	var btn_pressed := StyleBoxFlat.new()
+	btn_pressed.bg_color = Color(0.15, 0.3, 0.8, 1.0)
+	btn_pressed.corner_radius_top_left = 16
+	btn_pressed.corner_radius_top_right = 16
+	btn_pressed.corner_radius_bottom_left = 16
+	btn_pressed.corner_radius_bottom_right = 16
+	btn_pressed.content_margin_left = 20
+	btn_pressed.content_margin_right = 20
+	btn_pressed.content_margin_top = 10
+	btn_pressed.content_margin_bottom = 10
+	play_btn.add_theme_stylebox_override("pressed", btn_pressed)
+
 	play_btn.pressed.connect(_on_play_pressed)
-	vbox.add_child(play_btn)
+	_ui_layer.add_child(play_btn)
 
-	var spacer2 := Control.new()
-	spacer2.custom_minimum_size = Vector2(0, 15)
-	vbox.add_child(spacer2)
-
-	# Quit button
-	var quit_btn := Button.new()
-	quit_btn.text = "Quit"
-	quit_btn.add_theme_font_size_override("font_size", 22)
-	quit_btn.custom_minimum_size = Vector2(220, 45)
-	quit_btn.pressed.connect(_on_quit_pressed)
-	vbox.add_child(quit_btn)
-
-	var spacer3 := Control.new()
-	spacer3.custom_minimum_size = Vector2(0, 30)
-	vbox.add_child(spacer3)
-
-	# Controls info
-	var controls := Label.new()
-	controls.text = "Controls:\nLeft Click - Drop animal\nRight Click Drag - Orbit camera\nQ/E - Rotate camera\nScroll - Zoom\nSpace - Drop\nEsc - Menu"
-	controls.add_theme_font_size_override("font_size", 14)
-	controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	controls.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
-	vbox.add_child(controls)
-
-	add_child(vbox)
+func _update_title() -> void:
+	if not _title_label:
+		return
+	var pulse := 0.85 + sin(_title_time * 1.5) * 0.15
+	var hue_shift := sin(_title_time * 0.3) * 0.05
+	var color := Color.from_hsv(0.6 + hue_shift, 0.3, pulse)
+	_title_label.add_theme_color_override("font_color", color)
 
 func _on_play_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
-func _on_quit_pressed() -> void:
-	get_tree().quit()
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		var st := event as InputEventScreenTouch
+		if st.pressed:
+			var vh := float(get_viewport().get_visible_rect().size.y)
+			if st.position.y > vh * 0.75:
+				_on_play_pressed()

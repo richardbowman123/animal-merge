@@ -6,12 +6,17 @@ signal merge_completed()
 
 var _animals_node: Node3D
 var _merging_queue: Array[Array] = []
+var _merge_cooldown: float = 0.0
+const CHAIN_MERGE_DELAY := 0.35
 
 func setup(animals_node: Node3D) -> void:
 	_animals_node = animals_node
 
-func _process(_delta: float) -> void:
-	_process_merge_queue()
+func _process(delta: float) -> void:
+	if _merge_cooldown > 0.0:
+		_merge_cooldown -= delta
+	else:
+		_process_merge_queue()
 
 func register_animal(animal: Animal) -> void:
 	animal.merge_requested.connect(_on_merge_requested)
@@ -31,46 +36,83 @@ func _process_merge_queue() -> void:
 		if not is_instance_valid(animal_a) or not is_instance_valid(animal_b):
 			continue
 		_execute_merge(animal_a, animal_b)
+		_merge_cooldown = CHAIN_MERGE_DELAY
+		return
 
 func _execute_merge(animal_a: Animal, animal_b: Animal) -> void:
 	var tier := animal_a.tier
 	var midpoint := (animal_a.global_position + animal_b.global_position) / 2.0
-	var points: int
+
+	# Freeze both animals so tweens control their movement
+	animal_a.freeze = true
+	animal_b.freeze = true
 
 	# Whale + Whale = both disappear, huge bonus
 	if tier == AnimalData.MAX_TIER:
-		points = AnimalData.get_score(tier) * 5
-		_spawn_particles(midpoint, AnimalData.get_color(tier), AnimalData.get_radius(tier))
-		score_earned.emit(points, midpoint, AnimalData.get_animal_name(tier) + " x2!", tier)
-		animal_a.queue_free()
-		animal_b.queue_free()
-		merge_completed.emit()
+		var points := AnimalData.get_score(tier) * 5
+		var shrink := create_tween()
+		shrink.set_parallel(true)
+		shrink.tween_property(animal_a, "global_position", midpoint, 0.15).set_ease(Tween.EASE_IN)
+		shrink.tween_property(animal_b, "global_position", midpoint, 0.15).set_ease(Tween.EASE_IN)
+		shrink.tween_property(animal_a, "scale", Vector3(0.01, 0.01, 0.01), 0.15).set_ease(Tween.EASE_IN)
+		shrink.tween_property(animal_b, "scale", Vector3(0.01, 0.01, 0.01), 0.15).set_ease(Tween.EASE_IN)
+		shrink.set_parallel(false)
+		shrink.tween_callback(func():
+			_spawn_particles(midpoint, AnimalData.get_color(tier), AnimalData.get_radius(tier))
+			score_earned.emit(points, midpoint, AnimalData.get_animal_name(tier) + " x2!", tier)
+			if is_instance_valid(animal_a):
+				animal_a.queue_free()
+			if is_instance_valid(animal_b):
+				animal_b.queue_free()
+			merge_completed.emit()
+		)
 		return
 
 	var new_tier := tier + 1
-	points = AnimalData.get_score(new_tier)
+	var points := AnimalData.get_score(new_tier)
 
-	# Remove old animals
-	animal_a.queue_free()
-	animal_b.queue_free()
+	# Phase 1: Shrink old animals toward the merge point
+	var shrink := create_tween()
+	shrink.set_parallel(true)
+	shrink.tween_property(animal_a, "global_position", midpoint, 0.15).set_ease(Tween.EASE_IN)
+	shrink.tween_property(animal_b, "global_position", midpoint, 0.15).set_ease(Tween.EASE_IN)
+	shrink.tween_property(animal_a, "scale", Vector3(0.01, 0.01, 0.01), 0.15).set_ease(Tween.EASE_IN)
+	shrink.tween_property(animal_b, "scale", Vector3(0.01, 0.01, 0.01), 0.15).set_ease(Tween.EASE_IN)
+	shrink.set_parallel(false)
+	shrink.tween_callback(func():
+		# Remove old animals
+		if is_instance_valid(animal_a):
+			animal_a.queue_free()
+		if is_instance_valid(animal_b):
+			animal_b.queue_free()
 
-	# Spawn new animal — add to tree BEFORE setting global_position
-	var new_animal := Animal.create(new_tier)
-	_animals_node.add_child(new_animal)
-	new_animal.global_position = midpoint
-	new_animal.apply_central_impulse(Vector3(0, 2.0, 0))
-	register_animal(new_animal)
+		# Spawn new animal frozen at tiny scale
+		var new_animal := Animal.create(new_tier)
+		new_animal.freeze = true
+		_animals_node.add_child(new_animal)
+		new_animal.global_position = midpoint
+		new_animal.scale = Vector3(0.01, 0.01, 0.01)
+		register_animal(new_animal)
 
-	# Blast nearby animals outward
-	_apply_blast(midpoint, AnimalData.get_radius(new_tier), AnimalData.get_mass(new_tier), new_animal)
+		_spawn_particles(midpoint, AnimalData.get_color(new_tier), AnimalData.get_radius(new_tier))
+		score_earned.emit(points, midpoint, AnimalData.get_animal_name(new_tier), new_tier)
 
-	_spawn_particles(midpoint, AnimalData.get_color(new_tier), AnimalData.get_radius(new_tier))
-	score_earned.emit(points, midpoint, AnimalData.get_animal_name(new_tier), new_tier)
-	merge_completed.emit()
+		# Phase 2: Pop the new animal into existence with overshoot
+		var grow := create_tween()
+		grow.tween_property(new_animal, "scale", Vector3(1.15, 1.15, 1.15), 0.1).set_ease(Tween.EASE_OUT)
+		grow.tween_property(new_animal, "scale", Vector3.ONE, 0.08).set_ease(Tween.EASE_IN_OUT)
+		grow.tween_callback(func():
+			if is_instance_valid(new_animal):
+				new_animal.freeze = false
+				new_animal.apply_central_impulse(Vector3(0, 0.8, 0))
+				_apply_blast(midpoint, AnimalData.get_radius(new_tier), AnimalData.get_mass(new_tier), new_animal)
+		)
+		merge_completed.emit()
+	)
 
 func _apply_blast(origin: Vector3, new_radius: float, new_mass: float, exclude: Animal) -> void:
 	var blast_radius := new_radius * 2.5
-	var blast_force := new_mass * 3.0
+	var blast_force := new_mass * 1.5
 	for child in _animals_node.get_children():
 		if child is Animal and child != exclude and is_instance_valid(child):
 			var animal := child as Animal

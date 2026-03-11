@@ -6,17 +6,96 @@ const DEPTH := 5.0
 const HEIGHT := 9.0
 const WALL_THICKNESS := 0.2
 const EDGE_COLOR := Color(0.3, 0.6, 1.0, 1.0)
-const WALL_COLOR := Color(0.7, 0.85, 1.0, 0.12)
-const DEATH_LINE_HEIGHT := 8.5  # 0.5 units below top
+const WALL_COLOR := Color(0.7, 0.85, 1.0, 0.04)
+
+const YELLOW_LINE_HEIGHT := 7.0
+const ORANGE_LINE_HEIGHT := 7.75
+const RED_LINE_HEIGHT := 8.5
+
+const YELLOW_COLOR := Color(1.0, 0.9, 0.0)
+const ORANGE_COLOR := Color(1.0, 0.5, 0.0)
+const RED_COLOR := Color(1.0, 0.0, 0.0)
+
+const YELLOW_PULSE_HZ := 4.0
+const ORANGE_PULSE_HZ := 6.0
+const RED_PULSE_HZ := 10.0
+
+const DIM_ALPHA := 0.3
+const DIM_EMISSION := 0.5
 
 var death_line_y: float:
-	get: return global_position.y + DEATH_LINE_HEIGHT
+	get: return global_position.y + RED_LINE_HEIGHT
+
+var yellow_line_y: float:
+	get: return global_position.y + YELLOW_LINE_HEIGHT
+
+var orange_line_y: float:
+	get: return global_position.y + ORANGE_LINE_HEIGHT
+
+var _yellow_lines: Array[MeshInstance3D] = []
+var _orange_lines: Array[MeshInstance3D] = []
+var _red_lines: Array[MeshInstance3D] = []
+
+var _warning_level: int = 0
+var _pulse_time: float = 0.0
 
 func _ready() -> void:
 	_build_floor()
 	_build_walls()
 	_build_edges()
-	_build_death_line()
+	_build_warning_lines()
+
+func _process(delta: float) -> void:
+	if _warning_level == 0:
+		return
+	_pulse_time += delta
+	_animate_warning_lines()
+
+func set_warning_level(level: int) -> void:
+	if level == _warning_level:
+		return
+	_warning_level = clampi(level, 0, 3)
+	_pulse_time = 0.0
+	# Reset all lines to dim when level changes
+	_set_line_set_dim(_yellow_lines, YELLOW_COLOR)
+	_set_line_set_dim(_orange_lines, ORANGE_COLOR)
+	_set_line_set_dim(_red_lines, RED_COLOR)
+
+func _animate_warning_lines() -> void:
+	if _warning_level >= 1:
+		var pulse := _calc_pulse(YELLOW_PULSE_HZ)
+		_set_line_alpha(_yellow_lines, lerpf(DIM_ALPHA, 1.0, pulse))
+		_set_line_emission(_yellow_lines, lerpf(DIM_EMISSION, 3.0, pulse))
+	if _warning_level >= 2:
+		var pulse := _calc_pulse(ORANGE_PULSE_HZ)
+		_set_line_alpha(_orange_lines, lerpf(DIM_ALPHA, 1.0, pulse))
+		_set_line_emission(_orange_lines, lerpf(DIM_EMISSION, 4.0, pulse))
+	if _warning_level >= 3:
+		var pulse := _calc_pulse(RED_PULSE_HZ)
+		_set_line_alpha(_red_lines, lerpf(DIM_ALPHA, 1.0, pulse))
+		_set_line_emission(_red_lines, lerpf(DIM_EMISSION, 5.0, pulse))
+
+func _calc_pulse(hz: float) -> float:
+	return (sin(_pulse_time * hz * TAU) + 1.0) * 0.5
+
+func _set_line_set_dim(lines: Array[MeshInstance3D], color: Color) -> void:
+	for mesh_inst in lines:
+		if is_instance_valid(mesh_inst):
+			var mat: StandardMaterial3D = mesh_inst.material_override
+			mat.albedo_color = Color(color.r, color.g, color.b, DIM_ALPHA)
+			mat.emission_energy_multiplier = DIM_EMISSION
+
+func _set_line_alpha(lines: Array[MeshInstance3D], alpha: float) -> void:
+	for mesh_inst in lines:
+		if is_instance_valid(mesh_inst):
+			var mat: StandardMaterial3D = mesh_inst.material_override
+			mat.albedo_color.a = alpha
+
+func _set_line_emission(lines: Array[MeshInstance3D], energy: float) -> void:
+	for mesh_inst in lines:
+		if is_instance_valid(mesh_inst):
+			var mat: StandardMaterial3D = mesh_inst.material_override
+			mat.emission_energy_multiplier = energy
 
 func _build_floor() -> void:
 	var body := StaticBody3D.new()
@@ -74,7 +153,7 @@ func _create_wall(pos: Vector3, sz: Vector3) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = WALL_COLOR
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.cull_mode = BaseMaterial3D.CULL_BACK
 	mat.roughness = 0.2
 	mat.metallic = 0.1
 	mesh_inst.material_override = mat
@@ -139,10 +218,15 @@ func _add_edge_line(from: Vector3, to: Vector3, radius: float) -> void:
 		var angle := Vector3.UP.angle_to(direction)
 		mesh_inst.basis = Basis(axis, angle)
 
-func _build_death_line() -> void:
+func _build_warning_lines() -> void:
+	_build_line_set(YELLOW_LINE_HEIGHT, YELLOW_COLOR, DIM_EMISSION, _yellow_lines)
+	_build_line_set(ORANGE_LINE_HEIGHT, ORANGE_COLOR, DIM_EMISSION, _orange_lines)
+	_build_line_set(RED_LINE_HEIGHT, RED_COLOR, DIM_EMISSION, _red_lines)
+
+func _build_line_set(height: float, color: Color, emission_energy: float, line_array: Array[MeshInstance3D]) -> void:
 	var hw := WIDTH / 2.0 + 0.1
 	var hd := DEPTH / 2.0 + 0.1
-	var y := DEATH_LINE_HEIGHT
+	var y := height
 	var radius := 0.02
 
 	var lines := [
@@ -165,10 +249,11 @@ func _build_death_line() -> void:
 		mesh_inst.mesh = cyl
 
 		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color.RED
+		mat.albedo_color = Color(color.r, color.g, color.b, DIM_ALPHA)
 		mat.emission_enabled = true
-		mat.emission = Color.RED
-		mat.emission_energy_multiplier = 3.0
+		mat.emission = color
+		mat.emission_energy_multiplier = emission_energy
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.roughness = 0.1
 		mesh_inst.material_override = mat
 
@@ -183,6 +268,8 @@ func _build_death_line() -> void:
 			var axis := Vector3.UP.cross(direction).normalized()
 			var angle := Vector3.UP.angle_to(direction)
 			mesh_inst.basis = Basis(axis, angle)
+
+		line_array.append(mesh_inst)
 
 func get_drop_bounds() -> Rect2:
 	var hw := WIDTH / 2.0 - 0.2

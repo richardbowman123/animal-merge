@@ -1,12 +1,27 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_menu"]
+[ext_resource type="Script" path="res://scripts/container.gd" id="2_container"]
+[ext_resource type="Script" path="res://scripts/crowd.gd" id="3_crowd"]
+[ext_resource type="Script" path="res://scripts/merge_system.gd" id="4_merge"]
 
-[node name="MainMenu" type="Control"]
-layout_mode = 3
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+[node name="MainMenu" type="Node3D"]
 script = ExtResource("1_menu")
+
+[node name="Container" type="Node3D" parent="."]
+script = ExtResource("2_container")
+
+[node name="Crowd" type="Node3D" parent="."]
+script = ExtResource("3_crowd")
+
+[node name="MergeSystem" type="Node" parent="."]
+script = ExtResource("4_merge")
+
+[node name="Animals" type="Node3D" parent="."]
+
+[node name="CinematicCamera" type="Node3D" parent="."]
+
+[node name="Camera3D" type="Camera3D" parent="CinematicCamera"]
+fov = 50.0
+
+[node name="UILayer" type="CanvasLayer" parent="."]

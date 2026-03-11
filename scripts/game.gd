@@ -6,7 +6,7 @@ var _state: State = State.READY
 var _score: int = 0
 var _death_timer: float = 0.0
 const DEATH_TIME := 3.0
-const DROP_COOLDOWN := 0.25
+const DROP_COOLDOWN := 0.75
 
 # Node references
 @onready var _camera_rig = $CameraRig
@@ -170,6 +170,7 @@ func _start_game() -> void:
 	_update_score_ui()
 	_update_animal_ui()
 	_drop_system.enable()
+	_container.set_warning_level(0)
 
 	# Clear any existing animals
 	for child in _animals.get_children():
@@ -188,18 +189,32 @@ func _process(delta: float) -> void:
 		_check_death_line(delta)
 
 func _check_death_line(delta: float) -> void:
-	var death_y = _container.death_line_y
-	var any_above := false
+	var yellow_y: float = _container.yellow_line_y
+	var orange_y: float = _container.orange_line_y
+	var death_y: float = _container.death_line_y
+	var highest_warning := 0
+	var any_above_red := false
+
 	for child in _animals.get_children():
 		if child is Animal:
 			var animal := child as Animal
 			if animal.is_merging:
 				continue
+			# Skip animals still falling from being dropped
+			if animal.linear_velocity.y < -2.0:
+				continue
 			var top_y := animal.global_position.y + AnimalData.get_radius(animal.tier)
 			if top_y > death_y:
-				any_above = true
-				break
-	if any_above:
+				highest_warning = 3
+				any_above_red = true
+			elif top_y > orange_y and highest_warning < 2:
+				highest_warning = 2
+			elif top_y > yellow_y and highest_warning < 1:
+				highest_warning = 1
+
+	_container.set_warning_level(highest_warning)
+
+	if any_above_red:
 		_death_timer += delta
 		if _death_timer >= DEATH_TIME:
 			_trigger_game_over()
@@ -209,6 +224,7 @@ func _check_death_line(delta: float) -> void:
 func _trigger_game_over() -> void:
 	_state = State.GAME_OVER
 	_drop_system.disable()
+	_container.set_warning_level(3)
 	for child in _animals.get_children():
 		if child is Animal:
 			(child as Animal).freeze = true

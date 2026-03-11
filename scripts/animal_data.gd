@@ -38,7 +38,7 @@ static func get_mass(tier: int) -> float:
 	return r * r * r * 10.0
 
 static func get_bounce(tier: int) -> float:
-	return lerpf(0.4, 0.1, float(tier) / float(MAX_TIER))
+	return lerpf(0.15, 0.05, float(tier) / float(MAX_TIER))
 
 static func get_friction(tier: int) -> float:
 	return lerpf(0.3, 0.8, float(tier) / float(MAX_TIER))

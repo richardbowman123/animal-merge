@@ -18,6 +18,7 @@ var _target := Vector3(0.0, 3.5, 0.0)
 var _is_orbiting := false
 var _last_mouse_pos := Vector2.ZERO
 var _orbit_touch_index := -1
+var _is_touch_device := false  # Set true on first touch event
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -44,22 +45,27 @@ func _is_in_orbit_zone(screen_pos: Vector2) -> bool:
 	return screen_pos.y >= viewport_height * DROP_ZONE_FRACTION
 
 func _unhandled_input(event: InputEvent) -> void:
-	# === DESKTOP: right-click drag to orbit, scroll to zoom ===
-	if event is InputEventMouseButton:
-		var mb := event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_RIGHT:
-			_is_orbiting = mb.pressed
-			_last_mouse_pos = mb.position
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_distance = maxf(_distance - ZOOM_SPEED, MIN_DISTANCE)
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_distance = minf(_distance + ZOOM_SPEED, MAX_DISTANCE)
+	# Detect touch device
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_is_touch_device = true
 
-	if event is InputEventMouseMotion and _is_orbiting:
-		var mm := event as InputEventMouseMotion
-		_yaw -= mm.relative.x * MOUSE_ORBIT_SPEED * 60.0
-		_pitch -= mm.relative.y * MOUSE_ORBIT_SPEED * 60.0
-		_pitch = clampf(_pitch, MIN_PITCH, MAX_PITCH)
+	# === DESKTOP: right-click drag to orbit, scroll to zoom ===
+	if not _is_touch_device:
+		if event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if mb.button_index == MOUSE_BUTTON_RIGHT:
+				_is_orbiting = mb.pressed
+				_last_mouse_pos = mb.position
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_distance = maxf(_distance - ZOOM_SPEED, MIN_DISTANCE)
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_distance = minf(_distance + ZOOM_SPEED, MAX_DISTANCE)
+
+		if event is InputEventMouseMotion and _is_orbiting:
+			var mm := event as InputEventMouseMotion
+			_yaw -= mm.relative.x * MOUSE_ORBIT_SPEED * 60.0
+			_pitch -= mm.relative.y * MOUSE_ORBIT_SPEED * 60.0
+			_pitch = clampf(_pitch, MIN_PITCH, MAX_PITCH)
 
 	# === MOBILE: single finger drag in bottom two-thirds orbits ===
 	if event is InputEventScreenTouch:
