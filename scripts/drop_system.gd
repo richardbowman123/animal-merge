@@ -12,6 +12,12 @@ var _cursor_pos := Vector3.ZERO
 var _drop_height := 10.0
 var _container_bounds: Rect2
 
+# Touch aiming state
+var _touch_aiming := false  # Whether a finger is currently dragging in the drop zone
+var _touch_index := -1      # Which finger is aiming
+
+const DROP_ZONE_FRACTION := 0.35  # Top 35% of screen is the drop zone
+
 func _ready() -> void:
 	current_tier = AnimalData.get_random_droppable_tier()
 	next_tier = AnimalData.get_random_droppable_tier()
@@ -31,6 +37,8 @@ func enable() -> void:
 
 func disable() -> void:
 	can_drop = false
+	_touch_aiming = false
+	_touch_index = -1
 	if _ghost:
 		_ghost.visible = false
 	if _drop_line:
@@ -42,32 +50,49 @@ func _process(_delta: float) -> void:
 	_update_ghost()
 	_update_drop_line()
 
+func is_in_drop_zone(screen_pos: Vector2) -> bool:
+	var viewport_height := float(get_viewport().get_visible_rect().size.y)
+	return screen_pos.y < viewport_height * DROP_ZONE_FRACTION
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not can_drop:
 		return
 
+	# --- Desktop mouse controls (unchanged) ---
 	if event is InputEventMouseMotion:
-		_update_cursor_from_mouse(event.position)
-
-	if event is InputEventScreenDrag:
-		if (event as InputEventScreenDrag).index == 0:
-			_update_cursor_from_mouse(event.position)
+		_update_cursor_from_screen(event.position)
 
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not mb.is_echo():
 			_do_drop()
 
-	if event is InputEventScreenTouch:
-		var st := event as InputEventScreenTouch
-		if st.index == 0 and st.pressed:
-			_update_cursor_from_mouse(st.position)
-			_do_drop()
-
 	if event.is_action_pressed("drop"):
 		_do_drop()
 
-func _update_cursor_from_mouse(screen_pos: Vector2) -> void:
+	# --- Touch controls: drag to aim, release to drop ---
+	if event is InputEventScreenTouch:
+		var st := event as InputEventScreenTouch
+		if st.pressed:
+			# Finger went down — claim it if it's in the drop zone
+			if is_in_drop_zone(st.position) and not _touch_aiming:
+				_touch_aiming = true
+				_touch_index = st.index
+				_update_cursor_from_screen(st.position)
+		else:
+			# Finger lifted — drop the animal if this was our aiming finger
+			if st.index == _touch_index and _touch_aiming:
+				_touch_aiming = false
+				_touch_index = -1
+				_do_drop()
+
+	if event is InputEventScreenDrag:
+		var sd := event as InputEventScreenDrag
+		# Update cursor if this is our aiming finger
+		if sd.index == _touch_index and _touch_aiming:
+			_update_cursor_from_screen(sd.position)
+
+func _update_cursor_from_screen(screen_pos: Vector2) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if not camera:
 		return

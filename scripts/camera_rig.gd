@@ -9,6 +9,7 @@ const MAX_PITCH := 80.0
 const ZOOM_SPEED := 0.5
 const MIN_DISTANCE := 5.0
 const MAX_DISTANCE := 20.0
+const DROP_ZONE_FRACTION := 0.35  # Must match drop_system.gd
 
 var _yaw := 0.0
 var _pitch := 35.0
@@ -16,7 +17,7 @@ var _distance := 16.0
 var _target := Vector3(0.0, 3.5, 0.0)
 var _is_orbiting := false
 var _last_mouse_pos := Vector2.ZERO
-var _touch_positions := {}
+var _orbit_touch_index := -1  # Which finger is orbiting
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -38,8 +39,12 @@ func _process(delta: float) -> void:
 		_yaw -= ORBIT_SPEED * delta * 60.0
 	_update_camera()
 
+func _is_in_orbit_zone(screen_pos: Vector2) -> bool:
+	var viewport_height := float(get_viewport().get_visible_rect().size.y)
+	return screen_pos.y >= viewport_height * DROP_ZONE_FRACTION
+
 func _unhandled_input(event: InputEvent) -> void:
-	# Mouse orbit with right button
+	# --- Desktop: right-click drag to orbit, scroll to zoom ---
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -56,18 +61,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		_pitch -= mm.relative.y * MOUSE_ORBIT_SPEED * 60.0
 		_pitch = clampf(_pitch, MIN_PITCH, MAX_PITCH)
 
-	# Touch orbit with two fingers
+	# --- Touch: single finger in bottom zone orbits ---
 	if event is InputEventScreenTouch:
 		var st := event as InputEventScreenTouch
 		if st.pressed:
-			_touch_positions[st.index] = st.position
+			if _is_in_orbit_zone(st.position) and _orbit_touch_index == -1:
+				_orbit_touch_index = st.index
 		else:
-			_touch_positions.erase(st.index)
+			if st.index == _orbit_touch_index:
+				_orbit_touch_index = -1
 
 	if event is InputEventScreenDrag:
 		var sd := event as InputEventScreenDrag
-		_touch_positions[sd.index] = sd.position
-		if _touch_positions.size() == 2:
+		if sd.index == _orbit_touch_index:
 			_yaw -= sd.relative.x * TOUCH_ORBIT_SPEED * 60.0
 			_pitch -= sd.relative.y * TOUCH_ORBIT_SPEED * 60.0
 			_pitch = clampf(_pitch, MIN_PITCH, MAX_PITCH)
