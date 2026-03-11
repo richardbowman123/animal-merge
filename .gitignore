@@ -6,7 +6,7 @@
 *.apk
 *.aab
 *.pck
-!export-web/*.pck
+!docs/*.pck
 
 # OS files
 .DS_Store
