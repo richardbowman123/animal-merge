@@ -44,9 +44,23 @@ func _process(delta: float) -> void:
 func _is_in_orbit_zone(screen_pos: Vector2) -> bool:
 	var viewport_size := get_viewport().get_visible_rect().size
 	if _camera:
-		var tank_top_screen := _camera.unproject_position(Vector3(0.0, GameContainer.HEIGHT, 0.0))
-		var margin := viewport_size.y * 0.08
-		return screen_pos.y >= tank_top_screen.y + margin
+		# Project all 4 corners of the tank opening — must match drop_system logic
+		var hw := GameContainer.WIDTH / 2.0
+		var hd := GameContainer.DEPTH / 2.0
+		var h := GameContainer.HEIGHT
+		var corners := [
+			_camera.unproject_position(Vector3(-hw, h, -hd)),
+			_camera.unproject_position(Vector3(hw, h, -hd)),
+			_camera.unproject_position(Vector3(-hw, h, hd)),
+			_camera.unproject_position(Vector3(hw, h, hd)),
+		]
+		var max_screen_y := 0.0
+		for corner in corners:
+			if corner.y > max_screen_y:
+				max_screen_y = corner.y
+		var margin := viewport_size.y * 0.05
+		var boundary := minf(max_screen_y + margin, viewport_size.y * 0.85)
+		return screen_pos.y >= boundary
 	return screen_pos.y >= viewport_size.y * DROP_ZONE_FRACTION
 
 func _unhandled_input(event: InputEvent) -> void:
