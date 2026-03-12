@@ -17,6 +17,7 @@ config/features=PackedStringArray("4.6")
 [autoload]
 
 InputSetup="*res://scripts/input_setup.gd"
+GameState="*res://scripts/game_state.gd"
 
 [display]
 

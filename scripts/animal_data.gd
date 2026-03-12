@@ -9,7 +9,7 @@ const TIERS := [
 	{"name": "Fox",      "color": Color("D4652F"), "radius": 0.78, "droppable": true},
 	{"name": "Penguin",  "color": Color("1C1C2E"), "radius": 0.95, "droppable": false},
 	{"name": "Zebra",    "color": Color("F5F5F5"), "radius": 1.12, "droppable": false},
-	{"name": "Lion",     "color": Color("DAA520"), "radius": 1.30, "droppable": false},
+	{"name": "Panda",    "color": Color("F0EDE8"), "radius": 1.30, "droppable": false},
 	{"name": "Bear",     "color": Color("5C3A1E"), "radius": 1.50, "droppable": false},
 	{"name": "Elephant", "color": Color("8E99A4"), "radius": 1.75, "droppable": false},
 	{"name": "Whale",    "color": Color("0D47A1"), "radius": 2.10, "droppable": false},
@@ -41,7 +41,13 @@ static func get_bounce(tier: int) -> float:
 	return lerpf(0.15, 0.05, float(tier) / float(MAX_TIER))
 
 static func get_friction(tier: int) -> float:
-	return lerpf(0.3, 0.8, float(tier) / float(MAX_TIER))
+	return lerpf(0.6, 0.95, float(tier) / float(MAX_TIER))
+
+static func get_linear_damp(tier: int) -> float:
+	return lerpf(3.0, 6.0, float(tier) / float(MAX_TIER))
+
+static func get_angular_damp(tier: int) -> float:
+	return lerpf(5.0, 10.0, float(tier) / float(MAX_TIER))
 
 static func get_score(tier: int) -> int:
 	return (tier + 1) * 10

@@ -19,7 +19,7 @@ func _ready() -> void:
 	_build_visual()
 	_apply_physics()
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	# Cap speed so small animals don't ping around wildly
 	var speed := linear_velocity.length()
 	if speed > MAX_SPEED:
@@ -29,6 +29,11 @@ func _physics_process(_delta: float) -> void:
 		global_position.y = CONTAINER_TOP
 		if linear_velocity.y > 0:
 			linear_velocity.y = 0
+	# Dampen horizontal sliding/wandering without slowing falling
+	var h_damp := AnimalData.get_linear_damp(tier)
+	var factor := clampf(1.0 - h_damp * delta, 0.0, 1.0)
+	linear_velocity.x *= factor
+	linear_velocity.z *= factor
 
 func setup(p_tier: int) -> void:
 	tier = p_tier
@@ -42,6 +47,7 @@ func _apply_physics() -> void:
 	phys_mat.bounce = AnimalData.get_bounce(tier)
 	phys_mat.friction = AnimalData.get_friction(tier)
 	physics_material_override = phys_mat
+	angular_damp = AnimalData.get_angular_damp(tier)
 
 func _build_visual() -> void:
 	# Remove old visuals
@@ -149,15 +155,22 @@ func _add_features(radius: float, p_tier: int) -> void:
 			_add_stripe_ring(radius, -0.35, Color.BLACK)
 			_add_cone_feature(radius, Vector3(-0.35, 0.9, 0.0), radius * 0.1, radius * 0.25, Color.BLACK)
 			_add_cone_feature(radius, Vector3(0.35, 0.9, 0.0), radius * 0.1, radius * 0.25, Color.BLACK)
-		7:  # Lion — golden with darker mane ring + nose
-			var mane_color := Color("8B6914")
-			var mane_r := radius * 0.22
-			for i in range(10):
-				var angle := float(i) / 10.0 * TAU
-				var x := cos(angle) * radius * 0.9
-				var z := sin(angle) * radius * 0.9
-				_add_sphere_feature(radius, Vector3(x / radius, 0.45, z / radius), mane_r, mane_color)
-			_add_sphere_feature(radius, Vector3(0.0, 0.1, 0.95), radius * 0.1, Color("3D2B1F"))
+		7:  # Panda — white body with black eye patches, ears, and limbs
+			var panda_black := Color("1A1A1A")
+			# Black eye patches — big dark ovals behind the eyes so white eyes pop
+			_add_sphere_feature(radius, Vector3(-0.25, 0.28, 0.72), radius * 0.32, panda_black)
+			_add_sphere_feature(radius, Vector3(0.25, 0.28, 0.72), radius * 0.32, panda_black)
+			# Round black ears on top
+			_add_sphere_feature(radius, Vector3(-0.55, 0.85, 0.0), radius * 0.22, panda_black)
+			_add_sphere_feature(radius, Vector3(0.55, 0.85, 0.0), radius * 0.22, panda_black)
+			# Black arm/shoulder patches on the sides
+			_add_sphere_feature(radius, Vector3(-0.85, -0.1, 0.2), radius * 0.3, panda_black)
+			_add_sphere_feature(radius, Vector3(0.85, -0.1, 0.2), radius * 0.3, panda_black)
+			# Black leg patches at the bottom
+			_add_sphere_feature(radius, Vector3(-0.35, -0.85, 0.2), radius * 0.25, panda_black)
+			_add_sphere_feature(radius, Vector3(0.35, -0.85, 0.2), radius * 0.25, panda_black)
+			# Small dark nose
+			_add_sphere_feature(radius, Vector3(0.0, 0.08, 0.95), radius * 0.08, panda_black)
 		8:  # Bear — chocolate brown with round ears + snout
 			_add_sphere_feature(radius, Vector3(-0.5, 0.85, 0.1), radius * 0.28, Color("4A2E14"))
 			_add_sphere_feature(radius, Vector3(0.5, 0.85, 0.1), radius * 0.28, Color("4A2E14"))

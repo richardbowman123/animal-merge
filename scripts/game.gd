@@ -24,6 +24,13 @@ var _game_over_panel: PanelContainer
 var _final_score_label: Label
 var _restart_button: Button
 var _ui_layer: CanvasLayer
+# Tutorial state
+var _tutorial_active := false
+var _tutorial_step := 0  # 0=not active, 1=merge, 2=keep going, 3=camera
+var _tutorial_drops_in_step := 0
+var _tutorial_hint_label: Label = null
+var _tutorial_got_merge := false
+var _tutorial_initial_yaw := 0.0
 
 func _ready() -> void:
 	_setup_environment()
@@ -169,12 +176,112 @@ func _start_game() -> void:
 	_message_label.visible = false
 	_update_score_ui()
 	_update_animal_ui()
-	_drop_system.enable()
 	_container.set_warning_level(0)
 
 	# Clear any existing animals
 	for child in _animals.get_children():
 		child.queue_free()
+
+	# Show tutorial if flagged, otherwise enable drop immediately
+	if GameState.show_tutorial:
+		GameState.show_tutorial = false
+		_show_tutorial()
+	else:
+		_drop_system.enable()
+
+func _show_tutorial() -> void:
+	_tutorial_active = true
+	_tutorial_step = 0
+	_tutorial_drops_in_step = 0
+	_tutorial_got_merge = false
+
+	# Create the hint banner (persistent label at top-center)
+	_tutorial_hint_label = Label.new()
+	_tutorial_hint_label.add_theme_font_size_override("font_size", 22)
+	_tutorial_hint_label.add_theme_color_override("font_color", Color.WHITE)
+	_tutorial_hint_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	_tutorial_hint_label.add_theme_constant_override("outline_size", 6)
+	_tutorial_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_tutorial_hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_tutorial_hint_label.anchor_left = 0.05
+	_tutorial_hint_label.anchor_right = 0.95
+	_tutorial_hint_label.anchor_top = 0.0
+	_tutorial_hint_label.offset_top = 85
+	_tutorial_hint_label.offset_bottom = 160
+	_tutorial_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ui_layer.add_child(_tutorial_hint_label)
+
+	# Place a mouse in the centre of the tank
+	var seed_animal := Animal.create(0)
+	_animals.add_child(seed_animal)
+	seed_animal.global_position = Vector3(0.0, 1.0, 0.0)
+	_merge_system.register_animal(seed_animal)
+
+	# Start step 1
+	_tutorial_start_step(1)
+
+func _tutorial_start_step(step: int) -> void:
+	_tutorial_step = step
+	_tutorial_drops_in_step = 0
+
+	match step:
+		1:  # Merge step — force tier to mouse, ask player to drop near the other one
+			_tutorial_hint_label.text = "Aim above the mouse and tap to drop a matching one!"
+			_drop_system.force_tier(0)
+			_drop_system.enable()
+		2:  # Keep going — let them drop a few freely
+			_tutorial_hint_label.text = "Nice! Matching animals merge into bigger ones.\nKeep dropping!"
+			_drop_system.enable()
+		3:  # Camera step — pause dropping, explain camera
+			_drop_system.disable()
+			_tutorial_initial_yaw = _camera_rig.get_yaw_degrees()
+			var is_touch := _is_touch_device()
+			if is_touch:
+				_tutorial_hint_label.text = "You can rotate the view!\nDrag the bottom half of the screen to look around."
+			else:
+				_tutorial_hint_label.text = "You can rotate the view!\nRight-click and drag to look around."
+
+func _is_touch_device() -> bool:
+	return DisplayServer.is_touchscreen_available()
+
+func _tutorial_on_drop() -> void:
+	_tutorial_drops_in_step += 1
+
+	if _tutorial_step == 1:
+		# Keep forcing mouse until they get a merge
+		_drop_system.force_tier(0)
+		if _tutorial_drops_in_step >= 2 and not _tutorial_got_merge:
+			_tutorial_hint_label.text = "Try to land it right next to the other mouse!"
+	elif _tutorial_step == 2:
+		if _tutorial_drops_in_step >= 3:
+			_tutorial_start_step(3)
+
+func _tutorial_on_merge() -> void:
+	if _tutorial_step == 1:
+		_tutorial_got_merge = true
+		# Brief delay then move to step 2
+		var timer := get_tree().create_timer(1.5)
+		timer.timeout.connect(func(): _tutorial_start_step(2))
+
+func _tutorial_check_camera(delta: float) -> void:
+	if _tutorial_step != 3:
+		return
+	var current_yaw: float = _camera_rig.get_yaw_degrees()
+	var yaw_diff := absf(current_yaw - _tutorial_initial_yaw)
+	if yaw_diff > 30.0:
+		_tutorial_hint_label.text = "Great! You've got it. Have fun!"
+		# End tutorial after a brief moment
+		var timer := get_tree().create_timer(1.5)
+		timer.timeout.connect(_end_tutorial)
+		_tutorial_step = 0  # Prevent re-triggering
+
+func _end_tutorial() -> void:
+	_tutorial_active = false
+	_tutorial_step = 0
+	if _tutorial_hint_label:
+		_tutorial_hint_label.queue_free()
+		_tutorial_hint_label = null
+	_drop_system.enable()
 
 func _process(delta: float) -> void:
 	match _state:
@@ -187,6 +294,9 @@ func _process(delta: float) -> void:
 
 	if _state != State.GAME_OVER:
 		_check_death_line(delta)
+
+	if _tutorial_active:
+		_tutorial_check_camera(delta)
 
 func _check_death_line(delta: float) -> void:
 	var yellow_y: float = _container.yellow_line_y
@@ -237,6 +347,8 @@ func _on_animal_dropped(tier: int, pos: Vector3) -> void:
 	_animals.add_child(animal)
 	animal.global_position = pos
 	_merge_system.register_animal(animal)
+	if _tutorial_active:
+		_tutorial_on_drop()
 	# Re-enable dropping after a short cooldown
 	var timer := get_tree().create_timer(DROP_COOLDOWN)
 	timer.timeout.connect(_on_drop_cooldown_finished)
@@ -251,6 +363,8 @@ func _on_score_earned(points: int, pos: Vector3, _animal_name: String, animal_ti
 	_update_score_ui()
 	_spawn_score_popup(points, pos)
 	_crowd.react_to_merge(animal_tier)
+	if _tutorial_active:
+		_tutorial_on_merge()
 
 func _on_merge_completed() -> void:
 	pass

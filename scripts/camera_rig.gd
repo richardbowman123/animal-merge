@@ -4,7 +4,7 @@ class_name CameraRig
 const ORBIT_SPEED := 2.0
 const MOUSE_ORBIT_SPEED := 0.005
 const TOUCH_ORBIT_SPEED := 0.008
-const MIN_PITCH := -30.0
+const MIN_PITCH := 0.0
 const MAX_PITCH := 80.0
 const ZOOM_SPEED := 0.5
 const MIN_DISTANCE := 5.0
@@ -41,8 +41,12 @@ func _process(delta: float) -> void:
 	_update_camera()
 
 func _is_in_orbit_zone(screen_pos: Vector2) -> bool:
-	var viewport_height := float(get_viewport().get_visible_rect().size.y)
-	return screen_pos.y >= viewport_height * DROP_ZONE_FRACTION
+	var viewport_size := get_viewport().get_visible_rect().size
+	if _camera:
+		var tank_top_screen := _camera.unproject_position(Vector3(0.0, GameContainer.HEIGHT, 0.0))
+		var margin := viewport_size.y * 0.08
+		return screen_pos.y >= tank_top_screen.y + margin
+	return screen_pos.y >= viewport_size.y * DROP_ZONE_FRACTION
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Detect touch device
@@ -98,3 +102,6 @@ func _update_camera() -> void:
 
 func get_camera() -> Camera3D:
 	return _camera
+
+func get_yaw_degrees() -> float:
+	return _yaw

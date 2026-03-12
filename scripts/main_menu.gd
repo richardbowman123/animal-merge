@@ -20,7 +20,7 @@ var _light_time := 0.0
 var _spot_lights: Array[Light3D] = []
 
 # Title animation
-var _title_label: Label
+var _title_label: RichTextLabel
 var _title_time := 0.0
 
 # Demo drop state
@@ -244,14 +244,16 @@ func _on_demo_score(_points: int, _pos: Vector3, _name: String, tier: int) -> vo
 
 # ─── UI ────────────────────────────────────────────────────────
 func _setup_ui() -> void:
-	_title_label = Label.new()
-	_title_label.text = "ANIMAL MERGE"
-	_title_label.add_theme_font_size_override("font_size", 56)
-	_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_title_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0))
-	_title_label.add_theme_color_override("font_outline_color", Color(0.2, 0.4, 1.0))
-	_title_label.add_theme_constant_override("outline_size", 8)
+	_title_label = RichTextLabel.new()
+	_title_label.bbcode_enabled = true
+	_title_label.fit_content = true
+	_title_label.scroll_active = false
+	var title_font: Font = load("res://fonts/FredokaOne-Regular.ttf")
+	_title_label.add_theme_font_override("normal_font", title_font)
+	_title_label.add_theme_font_override("bold_font", title_font)
+	_title_label.text = _build_coloured_title()
+	_title_label.add_theme_font_size_override("normal_font_size", 56)
+	_title_label.add_theme_font_size_override("bold_font_size", 56)
 	_title_label.anchor_left = 0.0
 	_title_label.anchor_right = 1.0
 	_title_label.anchor_top = 0.0
@@ -260,7 +262,7 @@ func _setup_ui() -> void:
 	_ui_layer.add_child(_title_label)
 
 	var tagline := Label.new()
-	tagline.text = "Match. Merge. Evolve."
+	tagline.text = "Drop. Merge. Grow!"
 	tagline.add_theme_font_size_override("font_size", 20)
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tagline.add_theme_color_override("font_color", Color(0.6, 0.7, 0.9, 0.8))
@@ -271,67 +273,102 @@ func _setup_ui() -> void:
 	tagline.offset_bottom = 170
 	_ui_layer.add_child(tagline)
 
-	var play_btn := Button.new()
-	play_btn.text = "PLAY"
-	play_btn.add_theme_font_size_override("font_size", 32)
-	play_btn.custom_minimum_size = Vector2(240, 65)
-	play_btn.anchor_left = 0.5
-	play_btn.anchor_right = 0.5
-	play_btn.anchor_top = 1.0
-	play_btn.anchor_bottom = 1.0
-	play_btn.offset_left = -120
-	play_btn.offset_top = -180
-	play_btn.offset_right = 120
-	play_btn.offset_bottom = -115
+	# Button container — two buttons side by side
+	var btn_container := HBoxContainer.new()
+	btn_container.anchor_left = 0.5
+	btn_container.anchor_right = 0.5
+	btn_container.anchor_top = 1.0
+	btn_container.anchor_bottom = 1.0
+	btn_container.offset_left = -240
+	btn_container.offset_top = -180
+	btn_container.offset_right = 240
+	btn_container.offset_bottom = -115
+	btn_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_container.add_theme_constant_override("separation", 20)
+	_ui_layer.add_child(btn_container)
 
-	var btn_style := StyleBoxFlat.new()
-	btn_style.bg_color = Color(0.2, 0.4, 1.0, 0.85)
-	btn_style.corner_radius_top_left = 16
-	btn_style.corner_radius_top_right = 16
-	btn_style.corner_radius_bottom_left = 16
-	btn_style.corner_radius_bottom_right = 16
-	btn_style.content_margin_left = 20
-	btn_style.content_margin_right = 20
-	btn_style.content_margin_top = 10
-	btn_style.content_margin_bottom = 10
-	play_btn.add_theme_stylebox_override("normal", btn_style)
+	# "New Player" button
+	var new_player_btn := Button.new()
+	new_player_btn.text = "New Player"
+	new_player_btn.add_theme_font_size_override("font_size", 26)
+	new_player_btn.custom_minimum_size = Vector2(200, 65)
+	new_player_btn.add_theme_stylebox_override("normal", _make_btn_style(Color(0.15, 0.6, 0.3, 0.85)))
+	new_player_btn.add_theme_stylebox_override("hover", _make_btn_style(Color(0.2, 0.7, 0.4, 0.95)))
+	new_player_btn.add_theme_stylebox_override("pressed", _make_btn_style(Color(0.1, 0.5, 0.25, 1.0)))
+	new_player_btn.pressed.connect(_on_new_player_pressed)
+	btn_container.add_child(new_player_btn)
 
-	var btn_hover := StyleBoxFlat.new()
-	btn_hover.bg_color = Color(0.3, 0.5, 1.0, 0.95)
-	btn_hover.corner_radius_top_left = 16
-	btn_hover.corner_radius_top_right = 16
-	btn_hover.corner_radius_bottom_left = 16
-	btn_hover.corner_radius_bottom_right = 16
-	btn_hover.content_margin_left = 20
-	btn_hover.content_margin_right = 20
-	btn_hover.content_margin_top = 10
-	btn_hover.content_margin_bottom = 10
-	play_btn.add_theme_stylebox_override("hover", btn_hover)
+	# "Jump In" button
+	var jump_in_btn := Button.new()
+	jump_in_btn.text = "Jump In"
+	jump_in_btn.add_theme_font_size_override("font_size", 26)
+	jump_in_btn.custom_minimum_size = Vector2(200, 65)
+	jump_in_btn.add_theme_stylebox_override("normal", _make_btn_style(Color(0.2, 0.4, 1.0, 0.85)))
+	jump_in_btn.add_theme_stylebox_override("hover", _make_btn_style(Color(0.3, 0.5, 1.0, 0.95)))
+	jump_in_btn.add_theme_stylebox_override("pressed", _make_btn_style(Color(0.15, 0.3, 0.8, 1.0)))
+	jump_in_btn.pressed.connect(_on_play_pressed)
+	btn_container.add_child(jump_in_btn)
 
-	var btn_pressed := StyleBoxFlat.new()
-	btn_pressed.bg_color = Color(0.15, 0.3, 0.8, 1.0)
-	btn_pressed.corner_radius_top_left = 16
-	btn_pressed.corner_radius_top_right = 16
-	btn_pressed.corner_radius_bottom_left = 16
-	btn_pressed.corner_radius_bottom_right = 16
-	btn_pressed.content_margin_left = 20
-	btn_pressed.content_margin_right = 20
-	btn_pressed.content_margin_top = 10
-	btn_pressed.content_margin_bottom = 10
-	play_btn.add_theme_stylebox_override("pressed", btn_pressed)
-
-	play_btn.pressed.connect(_on_play_pressed)
-	_ui_layer.add_child(play_btn)
+func _build_coloured_title(brightness: float = 1.0) -> String:
+	# Each letter gets a different animal colour — cycles through the tiers
+	var title := "ANIMAL MERGE"
+	var letter_colors: Array[Color] = [
+		AnimalData.get_color(0),   # A - Mouse pink
+		AnimalData.get_color(1),   # N - Frog green
+		AnimalData.get_color(4),   # I - Fox orange
+		AnimalData.get_color(8),   # M - Bear brown
+		AnimalData.get_color(10),  # A - Whale blue
+		AnimalData.get_color(9),   # L - Elephant slate
+		Color.TRANSPARENT,         # (space)
+		AnimalData.get_color(2),   # M - Rabbit tan
+		AnimalData.get_color(1),   # E - Frog green
+		AnimalData.get_color(0),   # R - Mouse pink
+		AnimalData.get_color(4),   # G - Fox orange
+		AnimalData.get_color(10),  # E - Whale blue
+	]
+	var bbcode := "[center]"
+	for i in range(title.length()):
+		var ch := title[i]
+		if ch == " ":
+			bbcode += " "
+			continue
+		var c: Color = letter_colors[i]
+		# Apply brightness pulse
+		c = Color(
+			clampf(c.r * brightness, 0.0, 1.0),
+			clampf(c.g * brightness, 0.0, 1.0),
+			clampf(c.b * brightness, 0.0, 1.0)
+		)
+		var hex := c.to_html(false)
+		bbcode += "[color=#%s][b]%s[/b][/color]" % [hex, ch]
+	bbcode += "[/center]"
+	return bbcode
 
 func _update_title() -> void:
 	if not _title_label:
 		return
-	var pulse := 0.85 + sin(_title_time * 1.5) * 0.15
-	var hue_shift := sin(_title_time * 0.3) * 0.05
-	var color := Color.from_hsv(0.6 + hue_shift, 0.3, pulse)
-	_title_label.add_theme_color_override("font_color", color)
+	var pulse := 0.85 + sin(_title_time * 1.5) * 0.3
+	_title_label.text = _build_coloured_title(pulse)
+
+func _make_btn_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 16
+	style.corner_radius_top_right = 16
+	style.corner_radius_bottom_left = 16
+	style.corner_radius_bottom_right = 16
+	style.content_margin_left = 20
+	style.content_margin_right = 20
+	style.content_margin_top = 10
+	style.content_margin_bottom = 10
+	return style
+
+func _on_new_player_pressed() -> void:
+	GameState.show_tutorial = true
+	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _on_play_pressed() -> void:
+	GameState.show_tutorial = false
 	get_tree().change_scene_to_file("res://scenes/game.tscn")
 
 func _unhandled_input(event: InputEvent) -> void:

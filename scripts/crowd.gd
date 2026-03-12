@@ -4,6 +4,7 @@ class_name Crowd
 # Stadium amphitheatre of frozen Animal instances on benches around the container
 # 11 sections (one per tier), each with 3 rows of stepped seating
 # Benches are flat strips that give a clear stadium look
+# Sections near the camera are hidden to prevent view occlusion
 
 const ANIMAL_CALLS := [
 	"Squeak!",   # Mouse
@@ -13,15 +14,15 @@ const ANIMAL_CALLS := [
 	"Yip!",      # Fox
 	"Honk!",     # Penguin
 	"Neigh!",    # Zebra
-	"ROAR!",     # Lion
+	"MUNCH!",    # Panda
 	"GROWL!",    # Bear
 	"TRUMPET!",  # Elephant
 	"WHOOO!",    # Whale
 ]
 
-const INNER_RADIUS := 9.0
-const ROW_GAP := 3.0        # Radial distance between row centres (fixed for all)
-const ROW_HEIGHT_STEP := 3.0 # Vertical step per row — steep so back rows see over front
+const INNER_RADIUS := 10.0
+const ROW_GAP := 3.5
+const ROW_HEIGHT_STEP := 3.0
 const ROWS := 3
 const SECTION_GAP_DEG := 3.0
 const SECTIONS := 11
@@ -32,11 +33,45 @@ const MIN_BENCH_DEPTH := 1.5
 const MAX_BENCH_DEPTH := 2.8
 const BENCH_COLOR := Color(0.2, 0.18, 0.16)
 
+const OCCLUSION_HALF_ANGLE := 60.0  # Hide sections within this many degrees of camera
+
 var _sections: Array[Array] = []  # Array of arrays of Animal
 var _section_centers: Array[Vector3] = []
+var _section_nodes: Array[Node3D] = []  # Parent Node3D per section
+var _section_mid_degs: Array[float] = []  # Midpoint angle in degrees per section
+var _camera_rig: CameraRig = null
 
 func _ready() -> void:
 	_build_crowd()
+	# Try to find CameraRig in game scene (won't exist on main menu)
+	_camera_rig = _find_camera_rig()
+
+func _find_camera_rig() -> CameraRig:
+	var parent := get_parent()
+	if parent:
+		for child in parent.get_children():
+			if child is CameraRig:
+				return child
+	return null
+
+func _process(_delta: float) -> void:
+	if not _camera_rig:
+		return
+	var cam_yaw := _camera_rig.get_yaw_degrees()
+	# Normalize camera yaw to 0-360
+	cam_yaw = fmod(cam_yaw, 360.0)
+	if cam_yaw < 0.0:
+		cam_yaw += 360.0
+	for i in range(_section_nodes.size()):
+		var section_mid := _section_mid_degs[i]
+		var diff := absf(_angle_diff(cam_yaw, section_mid))
+		_section_nodes[i].visible = diff > OCCLUSION_HALF_ANGLE
+
+func _angle_diff(a: float, b: float) -> float:
+	var d := fmod(a - b + 180.0, 360.0) - 180.0
+	if d < -180.0:
+		d += 360.0
+	return d
 
 func _build_crowd() -> void:
 	var total_gap_deg := SECTION_GAP_DEG * float(SECTIONS)
@@ -46,15 +81,36 @@ func _build_crowd() -> void:
 	for i in range(SECTIONS):
 		_sections.append([])
 		_section_centers.append(Vector3.ZERO)
+		_section_mid_degs.append(0.0)
+		var section_parent := Node3D.new()
+		section_parent.name = "Section_%d" % i
+		add_child(section_parent)
+		_section_nodes.append(section_parent)
 
 	var current_angle_deg := 0.0
 	for s in range(SECTIONS):
 		var start_deg := current_angle_deg
 		var end_deg := start_deg + section_deg
+		_section_mid_degs[s] = (start_deg + end_deg) / 2.0
 		_build_section(s, start_deg, end_deg)
 		current_angle_deg = end_deg + SECTION_GAP_DEG
 
+func _get_spacing_multiplier(tier: int) -> float:
+	if tier >= 9:  # Elephant, Whale
+		return 3.2
+	elif tier >= 7:  # Lion, Bear
+		return 3.0
+	return SPACING_MULTIPLIER
+
+func _get_max_per_row(tier: int) -> int:
+	if tier >= 9:  # Elephant, Whale
+		return 3
+	elif tier >= 7:  # Lion, Bear
+		return 5
+	return 999  # No cap for smaller tiers
+
 func _build_section(tier: int, start_deg: float, end_deg: float) -> void:
+	var section_parent: Node3D = _section_nodes[tier]
 	var animal_radius := AnimalData.get_radius(tier)
 	var animal_diameter := animal_radius * 2.0
 	var bench_depth := clampf(animal_radius * 3.0, MIN_BENCH_DEPTH, MAX_BENCH_DEPTH)
@@ -63,27 +119,28 @@ func _build_section(tier: int, start_deg: float, end_deg: float) -> void:
 	var center_sum := Vector3.ZERO
 	var count := 0
 
+	var tier_spacing := _get_spacing_multiplier(tier)
+	var max_per_row := _get_max_per_row(tier)
+
 	for row in range(ROWS):
 		var row_radius := INNER_RADIUS + float(row) * ROW_GAP
 		var row_y := float(row) * ROW_HEIGHT_STEP + 0.5
 
-		# Chord width of this section at this radius (straight bench edge)
 		var chord_width := 2.0 * row_radius * sin(section_angle_rad / 2.0)
 
-		# Build the bench strip
-		_build_bench(mid_rad, row_radius, row_y, chord_width, bench_depth)
+		_build_bench(section_parent, mid_rad, row_radius, row_y, chord_width, bench_depth)
 
-		# Skip animals if they don't fit the chord
 		if chord_width < animal_diameter:
 			continue
 
 		var start_rad := deg_to_rad(start_deg)
 		var end_rad := deg_to_rad(end_deg)
 
-		var slot_size := animal_radius * SPACING_MULTIPLIER
+		var slot_size := animal_radius * tier_spacing
 		var num_animals := int(chord_width / slot_size)
 		if num_animals < 1:
 			num_animals = 1
+		num_animals = mini(num_animals, max_per_row)
 
 		var angle_step := (end_rad - start_rad) / float(num_animals)
 		var angle_offset := angle_step * 0.5
@@ -92,7 +149,6 @@ func _build_section(tier: int, start_deg: float, end_deg: float) -> void:
 			var angle := start_rad + angle_offset + float(i) * angle_step
 			var x := row_radius * sin(angle)
 			var z := row_radius * cos(angle)
-			# Sit on top of the bench
 			var animal_y := row_y + animal_radius
 			var pos := Vector3(x, animal_y, z)
 
@@ -100,10 +156,9 @@ func _build_section(tier: int, start_deg: float, end_deg: float) -> void:
 			animal.freeze = true
 			animal.collision_layer = 0
 			animal.collision_mask = 0
-			add_child(animal)
+			section_parent.add_child(animal)
 			animal.global_position = pos
 
-			# Face inward — look_at points -Z at target, eyes are on +Z, so rotate 180
 			var look_target := Vector3(0.0, animal_y, 0.0)
 			if pos.distance_to(look_target) > 0.1:
 				animal.look_at(look_target, Vector3.UP)
@@ -118,9 +173,9 @@ func _build_section(tier: int, start_deg: float, end_deg: float) -> void:
 	else:
 		_section_centers[tier] = Vector3(INNER_RADIUS * sin(mid_rad), 1.5, INNER_RADIUS * cos(mid_rad))
 
-	_add_team_label(tier, start_deg, end_deg)
+	_add_team_label(section_parent, tier, start_deg, end_deg)
 
-func _build_bench(mid_angle_rad: float, radius: float, y: float, width: float, depth: float) -> void:
+func _build_bench(parent: Node3D, mid_angle_rad: float, radius: float, y: float, width: float, depth: float) -> void:
 	var mesh_inst := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = Vector3(width, BENCH_HEIGHT, depth)
@@ -131,17 +186,14 @@ func _build_bench(mid_angle_rad: float, radius: float, y: float, width: float, d
 	mat.roughness = 0.85
 	mesh_inst.material_override = mat
 
-	add_child(mesh_inst)
+	parent.add_child(mesh_inst)
 
-	# Position at the midpoint of the section arc, bench top at y
 	var x := radius * sin(mid_angle_rad)
 	var z := radius * cos(mid_angle_rad)
 	mesh_inst.position = Vector3(x, y - BENCH_HEIGHT / 2.0, z)
-
-	# Rotate so the wide edge (X) is tangent to the circle
 	mesh_inst.rotation.y = mid_angle_rad
 
-func _add_team_label(tier: int, start_deg: float, end_deg: float) -> void:
+func _add_team_label(parent: Node3D, tier: int, start_deg: float, end_deg: float) -> void:
 	var mid_rad := deg_to_rad((start_deg + end_deg) / 2.0)
 	var label_radius := INNER_RADIUS - 1.0
 	var label_pos := Vector3(label_radius * sin(mid_rad), 0.5, label_radius * cos(mid_rad))
@@ -155,7 +207,7 @@ func _add_team_label(tier: int, start_deg: float, end_deg: float) -> void:
 	label.modulate = AnimalData.get_color(tier)
 	label.outline_modulate = Color.BLACK
 	label.outline_size = 10
-	add_child(label)
+	parent.add_child(label)
 	label.global_position = label_pos
 
 	var look_target := Vector3(0.0, label_pos.y, 0.0)

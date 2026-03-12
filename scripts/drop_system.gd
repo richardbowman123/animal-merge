@@ -31,6 +31,12 @@ func _ready() -> void:
 	_create_drop_line()
 	_create_target_indicator()
 
+func force_tier(tier: int) -> void:
+	current_tier = tier
+	next_tier = tier
+	_update_ghost_appearance()
+	_update_target_indicator_scale()
+
 func setup(container: GameContainer) -> void:
 	_container_bounds = container.get_drop_bounds()
 	_drop_height = GameContainer.HEIGHT
@@ -64,8 +70,13 @@ func _process(_delta: float) -> void:
 	_update_target_indicator()
 
 func _is_in_drop_zone(screen_pos: Vector2) -> bool:
-	var viewport_height := float(get_viewport().get_visible_rect().size.y)
-	return screen_pos.y < viewport_height * DROP_ZONE_FRACTION
+	var viewport_size := get_viewport().get_visible_rect().size
+	var camera := get_viewport().get_camera_3d()
+	if camera:
+		var tank_top_screen := camera.unproject_position(Vector3(0.0, GameContainer.HEIGHT, 0.0))
+		var margin := viewport_size.y * 0.08
+		return screen_pos.y < tank_top_screen.y + margin
+	return screen_pos.y < viewport_size.y * DROP_ZONE_FRACTION
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not can_drop:
