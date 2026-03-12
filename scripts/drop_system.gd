@@ -78,7 +78,7 @@ func _is_in_drop_zone(screen_pos: Vector2) -> bool:
 		return screen_pos.y < tank_top_screen.y + margin
 	return screen_pos.y < viewport_size.y * DROP_ZONE_FRACTION
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not can_drop:
 		return
 
@@ -99,7 +99,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.is_action_pressed("drop"):
 			_do_drop()
 
-	# === MOBILE: touch in top third to aim, release to drop ===
+	# === MOBILE: touch in drop zone to aim, release to drop ===
 	if event is InputEventScreenTouch:
 		var st := event as InputEventScreenTouch
 		if st.pressed:
@@ -107,16 +107,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				_touch_aiming = true
 				_touch_index = st.index
 				_update_cursor_from_screen(st.position)
+				get_viewport().set_input_as_handled()
 		else:
 			if st.index == _touch_index and _touch_aiming:
 				_touch_aiming = false
 				_touch_index = -1
 				_do_drop()
+				get_viewport().set_input_as_handled()
 
 	if event is InputEventScreenDrag:
 		var sd := event as InputEventScreenDrag
 		if sd.index == _touch_index and _touch_aiming:
 			_update_cursor_from_screen(sd.position)
+			get_viewport().set_input_as_handled()
 
 func _update_cursor_from_screen(screen_pos: Vector2) -> void:
 	var camera := get_viewport().get_camera_3d()

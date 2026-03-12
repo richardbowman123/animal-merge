@@ -197,7 +197,7 @@ func _show_tutorial() -> void:
 
 	# Create the hint banner (persistent label at top-center)
 	_tutorial_hint_label = Label.new()
-	_tutorial_hint_label.add_theme_font_size_override("font_size", 22)
+	_tutorial_hint_label.add_theme_font_size_override("font_size", 28)
 	_tutorial_hint_label.add_theme_color_override("font_color", Color.WHITE)
 	_tutorial_hint_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_tutorial_hint_label.add_theme_constant_override("outline_size", 6)
@@ -226,20 +226,24 @@ func _tutorial_start_step(step: int) -> void:
 
 	match step:
 		1:  # Merge step — force tier to mouse, ask player to drop near the other one
-			_tutorial_hint_label.text = "Aim above the mouse and tap to drop a matching one!"
 			_drop_system.force_tier(0)
 			_drop_system.enable()
+			var is_touch_s1 := _is_touch_device()
+			if is_touch_s1:
+				_tutorial_hint_label.text = "Drag your finger across the top of the screen to aim at the mouse below.\nRelease to drop a matching one!"
+			else:
+				_tutorial_hint_label.text = "Move your mouse above the tank to aim at the mouse below.\nClick to drop a matching one!"
 		2:  # Keep going — let them drop a few freely
 			_tutorial_hint_label.text = "Nice! Matching animals merge into bigger ones.\nKeep dropping!"
 			_drop_system.enable()
 		3:  # Camera step — pause dropping, explain camera
 			_drop_system.disable()
 			_tutorial_initial_yaw = _camera_rig.get_yaw_degrees()
-			var is_touch := _is_touch_device()
-			if is_touch:
-				_tutorial_hint_label.text = "You can rotate the view!\nDrag the bottom half of the screen to look around."
+			var is_touch_s3 := _is_touch_device()
+			if is_touch_s3:
+				_tutorial_hint_label.text = "You can rotate the view!\nDrag the lower half of the screen left or right to spin the camera."
 			else:
-				_tutorial_hint_label.text = "You can rotate the view!\nRight-click and drag to look around."
+				_tutorial_hint_label.text = "You can rotate the view!\nRight-click and drag left or right to spin the camera."
 
 func _is_touch_device() -> bool:
 	return DisplayServer.is_touchscreen_available()
@@ -251,7 +255,7 @@ func _tutorial_on_drop() -> void:
 		# Keep forcing mouse until they get a merge
 		_drop_system.force_tier(0)
 		if _tutorial_drops_in_step >= 2 and not _tutorial_got_merge:
-			_tutorial_hint_label.text = "Try to land it right next to the other mouse!"
+			_tutorial_hint_label.text = "Nearly! Aim right above the other mouse so they touch when it lands."
 	elif _tutorial_step == 2:
 		if _tutorial_drops_in_step >= 3:
 			_tutorial_start_step(3)
