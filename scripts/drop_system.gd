@@ -25,6 +25,7 @@ const DROP_ZONE_FRACTION := 0.33  # Top third of screen
 const TARGET_COLOR := Color(0.3, 0.5, 1.0)
 
 func _ready() -> void:
+	_is_touch_device = DisplayServer.is_touchscreen_available()
 	current_tier = AnimalData.get_random_droppable_tier()
 	next_tier = AnimalData.get_random_droppable_tier()
 	_create_ghost()
@@ -79,12 +80,21 @@ func _is_in_drop_zone(screen_pos: Vector2) -> bool:
 	return screen_pos.y < viewport_size.y * DROP_ZONE_FRACTION
 
 func _input(event: InputEvent) -> void:
-	if not can_drop:
-		return
-
 	# Detect touch device — once set, mouse events are ignored for game controls
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:
 		_is_touch_device = true
+
+	# On touch devices, consume drop-zone touches even during cooldown
+	# so they never reach the camera orbit handler
+	if _is_touch_device and not can_drop:
+		if event is InputEventScreenTouch:
+			var st := event as InputEventScreenTouch
+			if st.pressed and _is_in_drop_zone(st.position):
+				get_viewport().set_input_as_handled()
+		return
+
+	if not can_drop:
+		return
 
 	# === DESKTOP: mouse controls (only when NOT on a touch device) ===
 	if not _is_touch_device:

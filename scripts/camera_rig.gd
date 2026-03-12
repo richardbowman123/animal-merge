@@ -23,6 +23,7 @@ var _is_touch_device := false  # Set true on first touch event
 @onready var _camera: Camera3D = $Camera3D
 
 func _ready() -> void:
+	_is_touch_device = DisplayServer.is_touchscreen_available()
 	if not has_node("Camera3D"):
 		var cam := Camera3D.new()
 		cam.name = "Camera3D"
